@@ -73,24 +73,26 @@ class EncodingConverterApp:
         return ext.lower() in TEXT_FILE_EXTENSIONS
 
     def detect_encoding(self, file_path):
-        """检测文件编码"""
+        """检测文件编码 - 优化版"""
         try:
             with open(file_path, 'rb') as f:
-                raw_data = f.read(4096) # 读取一部分数据进行检测
+                raw_data = f.read(8192) # 增加采样量提高准确度
+            
+            # 优先检查是否已经是 UTF-8，如果是则直接返回，避免误判
+            try:
+                raw_data.decode('utf-8')
+                return 'utf-8', 1.0
+            except UnicodeDecodeError:
+                pass
+
             result = chardet.detect(raw_data)
             encoding = result['encoding']
             confidence = result['confidence']
-            # chardet有时会将GBK/GB2312检测为其他编码，增加一些兼容性判断
-            if encoding and encoding.lower() in ['gb2312', 'gbk', 'gb18030']:
-                 return encoding.lower(), confidence
-            # 对于置信度不高的常见误判，也尝试按GBK处理
-            if encoding and confidence < 0.9 and encoding.lower() in ['ascii', 'windows-1252']:
-                 # 尝试用GBK解码，如果成功则认为是GBK
-                 try:
-                     raw_data.decode('gbk')
-                     return 'gbk', 0.5 # 置信度设低一些
-                 except UnicodeDecodeError:
-                     pass
+
+            # 如果 chardet 判定为 ASCII 或 Windows-1252 但包含中文，强制转 GB18030 (GBK超集)
+            if encoding and encoding.lower() in ['ascii', 'windows-1252', 'iso-8859-1']:
+                return 'gb18030', 0.5
+            
             return encoding, confidence
         except Exception as e:
             self.log(f"检测编码错误 ({os.path.basename(file_path)}): {e}")
@@ -149,19 +151,22 @@ class EncodingConverterApp:
                 
                 encoding, confidence = self.detect_encoding(file_path)
 
-                if encoding and encoding.lower() in SUPPORTED_ENCODINGS:
-                    self.log(f"检测到 {encoding.upper()} (置信度: {confidence:.2f}): {filename}")
+                # 最小化修改：只要有编码建议，且不是 UTF-8，就尝试转换
+                if encoding and encoding.lower() != 'utf-8':
+                    self.log(f"尝试转换 {encoding.upper()} -> UTF-8: {filename}")
                     if self.convert_file_encoding(file_path, encoding):
                         converted_count += 1
                     else:
                         error_count += 1
-                elif encoding:
-                    # self.log(f"跳过 (非GBK/GB2312编码: {encoding}): {filename}")
-                    skipped_count += 1
+                elif encoding and encoding.lower() == 'utf-8':
+                    # 已经是 UTF-8 的文件由 convert_file_encoding 内部的 needs_conversion 处理
+                    if self.convert_file_encoding(file_path, 'utf-8'):
+                        converted_count += 1
+                    else:
+                        skipped_count += 1
                 else:
-                    # self.log(f"跳过 (无法检测编码): {filename}")
                     skipped_count += 1
-                    error_count += 1 # 无法检测也算一种错误
+                    error_count += 1
         
         self.log(f"\n处理完成。共扫描 {processed_files} 个文本/代码文件。")
         self.log(f"成功转换: {converted_count}")

@@ -2,8 +2,7 @@ name: Release Build and Publish
 
 on:
   push:
-    tags:
-      - 'v*' # Trigger on tags like v1.0, v2.3.4
+    workflow_dispatch
 
 jobs:
   build:

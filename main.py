@@ -4,6 +4,7 @@ import os
 import chardet
 import threading
 import webbrowser
+import re
 
 # 常见的文本和代码文件扩展名
 TEXT_FILE_EXTENSIONS = {
@@ -16,7 +17,7 @@ TEXT_FILE_EXTENSIONS = {
 class EncodingConverterApp:
     def __init__(self, master):
         self.master = master
-        master.title("GBK/GB2312 转 UTF-8 工具 (增强版)")
+        master.title("GBK 转 UTF-8 工具 (最终强化版)")
         master.geometry("650x550")
 
         # UI 布局
@@ -27,13 +28,13 @@ class EncodingConverterApp:
         self.browse_button = tk.Button(master, text="浏览", command=self.browse_folder)
         self.browse_button.grid(row=0, column=2, padx=10, pady=10)
 
-        tk.Label(master, text="排除路径 (逗号分隔):").grid(row=1, column=0, padx=10, pady=5, sticky='w')
+        tk.Label(master, text="排除关键字 (如: .git, boost):").grid(row=1, column=0, padx=10, pady=5, sticky='w')
         self.exclude_folders_var = tk.StringVar()
-        self.exclude_folders_var.set(".git, node_modules, __pycache__, build, dist, include/boost")
+        self.exclude_folders_var.set(".git, node_modules, __pycache__, build, dist, boost, google")
         self.exclude_entry = tk.Entry(master, textvariable=self.exclude_folders_var, width=50)
         self.exclude_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
 
-        self.convert_button = tk.Button(master, text="🚀 开始转换", command=self.start_conversion_thread, bg="#e1e1e1")
+        self.convert_button = tk.Button(master, text="🚀 开始扫描并转换", command=self.start_conversion_thread, bg="#4CAF50", fg="white")
         self.convert_button.grid(row=2, column=0, columnspan=3, pady=15)
 
         tk.Label(master, text="处理日志:").grid(row=3, column=0, padx=10, pady=5, sticky='w')
@@ -50,7 +51,6 @@ class EncodingConverterApp:
         master.grid_columnconfigure(1, weight=1)
 
     def log(self, message):
-        """线程安全的日志记录"""
         self.master.after(0, self._log_safe, message)
 
     def _log_safe(self, message):
@@ -64,13 +64,16 @@ class EncodingConverterApp:
         if folder:
             self.folder_path_var.set(os.path.normpath(folder))
 
+    def is_likely_chinese(self, text):
+        """简单检查字符串中是否包含中文字符，防止西欧字符误判"""
+        return any('\u4e00' <= char <= '\u9fff' for char in text)
+
     def detect_encoding(self, file_path):
-        """增强版编码检测：保护西欧特殊字符"""
         try:
             with open(file_path, 'rb') as f:
-                raw_data = f.read(10240) # 读取10KB提高准确度
+                raw_data = f.read(15360) # 进一步扩大采样到15KB
             
-            # 1. 尝试直接以 UTF-8 解码（涵盖了纯英文 ASCII）
+            # 1. 尝试 UTF-8
             try:
                 raw_data.decode('utf-8')
                 return 'utf-8', 1.0
@@ -79,44 +82,43 @@ class EncodingConverterApp:
 
             result = chardet.detect(raw_data)
             enc = result['encoding']
-            conf = result['confidence']
-
-            # 2. 针对可能包含特殊西欧字符（如 Hervé）的情况进行保护
+            
+            # 2. 针对 Bjønnes 这种西欧字符的保护逻辑
             if enc and enc.lower() in ['ascii', 'windows-1252', 'iso-8859-1']:
                 try:
-                    # 尝试用中文编码严格检测，如果报错，说明它真的就是西欧文，不是GBK误判
-                    raw_data.decode('gb18030')
-                    return 'gb18030', 0.5
+                    # 尝试用 GB18030 解码并检查是否有汉字
+                    decoded_text = raw_data.decode('gb18030')
+                    if self.is_likely_chinese(decoded_text):
+                        return 'gb18030', 0.5
+                    else:
+                        # 只有特殊符号而没汉字，判定为外文，不转换
+                        return 'utf-8', 1.0
                 except UnicodeDecodeError:
-                    # 确认为外文，返回 utf-8 让其跳过处理，或者保留原样
                     return 'utf-8', 1.0 
 
-            return enc, conf
+            return enc, result['confidence']
         except Exception as e:
-            self.log(f"读取错误: {os.path.basename(file_path)} - {e}")
+            self.log(f"读取失败: {os.path.basename(file_path)} - {e}")
             return None, 0
 
     def process_folder(self, base_folder):
-        # 预处理排除列表：统一斜杠并清理空格
         raw_excludes = self.exclude_folders_var.get().split(',')
-        exclude_list = [os.path.normpath(x.strip().replace('/', os.sep)) for x in raw_excludes if x.strip()]
+        # 预处理关键字，支持相对路径片段
+        exclude_keywords = [x.strip().replace('/', os.sep).replace('\\', os.sep) for x in raw_excludes if x.strip()]
 
         converted = 0
         skipped = 0
         errors = 0
 
         for root, dirs, files in os.walk(base_folder, topdown=True):
-            # 获取当前目录相对于根目录的路径
+            # 核心改进：检查当前 root 路径中是否包含任何排除关键字
             rel_root = os.path.relpath(root, base_folder)
             
-            # 检查当前目录是否在排除名单中（支持 include/boost 这种写法）
-            # 注意：'.' 表示根目录本身
-            if any(rel_root == ex or rel_root.startswith(ex + os.sep) for ex in exclude_list):
-                dirs[:] = [] # 阻止继续向下遍历
+            # 只要关键字在路径片段中出现，就跳过整个目录
+            path_parts = rel_root.split(os.sep)
+            if any(key in path_parts or key in rel_root for key in exclude_keywords if key != '.'):
+                dirs[:] = [] 
                 continue
-
-            # 过滤子目录，防止下一步进入排除名单
-            dirs[:] = [d for d in dirs if os.path.normpath(os.path.join(rel_root, d)) not in exclude_list]
 
             for f in files:
                 if not any(f.lower().endswith(ext) for ext in TEXT_FILE_EXTENSIONS):
@@ -125,12 +127,19 @@ class EncodingConverterApp:
                 full_path = os.path.join(root, f)
                 enc, conf = self.detect_encoding(full_path)
 
-                # 逻辑优化：如果是 UTF-8 或无法识别，直接跳过
                 if not enc or enc.lower() == 'utf-8':
                     skipped += 1
                     continue
 
                 try:
+                    # 如果检测到 MACROMAN 或其他罕见编码且没有汉字，跳过
+                    if enc.lower() not in ['gbk', 'gb2312', 'gb18030', 'utf-8-sig']:
+                        # 再做一次汉字检测，防止把西欧注释转乱码
+                        with open(full_path, 'rb') as f_check:
+                            if not self.is_likely_chinese(f_check.read(10240).decode(enc, errors='replace')):
+                                skipped += 1
+                                continue
+
                     self.log(f"转换中 [{enc.upper()}]: {os.path.relpath(full_path, base_folder)}")
                     with open(full_path, 'r', encoding=enc, errors='replace') as fr:
                         content = fr.read()

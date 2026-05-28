@@ -2,8 +2,9 @@ name: Windows Auto Release
 
 on:
   push:
-    tags:
-      - 'v*' # 只有当你手动打以 v 开头的标签推送到 GitHub 时才触发
+    branches:
+      - main  # 或者是 master，只要推送到这个分支就触发
+  workflow_dispatch: 
 
 jobs:
   build-and-release:
@@ -30,7 +31,7 @@ jobs:
       id: vars
       shell: bash
       run: |
-        # 生成格式如 2023.10.27.143055 的时间戳
+        # 生成时间戳作为唯一的 Tag
         echo "tag=v$(date +'%Y.%m.%d.%H%M%S')" >> $GITHUB_OUTPUT
 
     - name: Build with PyInstaller
@@ -39,13 +40,12 @@ jobs:
     - name: Create Release and Upload Asset
       uses: softprops/action-gh-release@v2
       with:
+        # 使用上面生成的带时间的 tag
         tag_name: ${{ steps.vars.outputs.tag }}
         name: Release ${{ steps.vars.outputs.tag }}
         body: |
           自动生成的 Windows 构建版本。
-          提交信息: ${{ github.event.head_commit.message }}
+          本次提交内容: ${{ github.event.head_commit.message }}
         files: dist/gbk2utf8-windows.exe
-        draft: false
-        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -3,7 +3,7 @@ name: Windows Auto Release
 on:
   push:
     branches:
-      - main  # 或者是 master，只要推送到这个分支就触发
+      - master  # 或者是 master，只要推送到这个分支就触发
   workflow_dispatch: 
 
 jobs:

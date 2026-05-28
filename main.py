@@ -43,7 +43,7 @@ class EncodingConverterApp:
         self.log_text.config(state=tk.DISABLED)
 
         self.github_url = "https://github.com/dependon/gbk2utf8"
-        self.github_label = tk.Label(master, text="项目地址: " + self.github_url, fg="blue", cursor="hand2")
+        self.github_label = tk.Label(master, text="源项目地址: " + self.github_url, fg="blue", cursor="hand2")
         self.github_label.grid(row=5, column=0, columnspan=3, padx=10, pady=10, sticky='w') 
         self.github_label.bind("<Button-1>", lambda e: webbrowser.open_new(self.github_url))
 

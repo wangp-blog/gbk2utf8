@@ -5,11 +5,7 @@ import chardet
 import threading
 import webbrowser
 
-# 支持检测和转换的编码列表
-SUPPORTED_ENCODINGS = ['gb2312', 'gbk']
-# 目标编码
-TARGET_ENCODING = 'utf-8'
-# 常见的文本和代码文件扩展名 (小写)
+# 常见的文本和代码文件扩展名
 TEXT_FILE_EXTENSIONS = {
     '.txt', '.log', '.csv', '.json', '.xml', '.html', '.htm', '.css', '.js', 
     '.py', '.java', '.c', '.cpp', '.h', '.hpp', '.cs', '.php', '.rb', '.go', 
@@ -20,72 +16,61 @@ TEXT_FILE_EXTENSIONS = {
 class EncodingConverterApp:
     def __init__(self, master):
         self.master = master
-        master.title("GBK/GB2312 转 UTF-8 工具")
-        master.geometry("600x520")
+        master.title("GBK/GB2312 转 UTF-8 工具 (增强版)")
+        master.geometry("650x550")
 
-        # 1. 文件夹选择
+        # UI 布局
+        tk.Label(master, text="选择根文件夹:").grid(row=0, column=0, padx=10, pady=10, sticky='w')
         self.folder_path_var = tk.StringVar()
-        tk.Label(master, text="选择文件夹:").grid(row=0, column=0, padx=5, pady=5, sticky='w')
         self.folder_entry = tk.Entry(master, textvariable=self.folder_path_var, width=50)
-        self.folder_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+        self.folder_entry.grid(row=0, column=1, padx=5, pady=10, sticky='ew')
         self.browse_button = tk.Button(master, text="浏览", command=self.browse_folder)
-        self.browse_button.grid(row=0, column=2, padx=5, pady=5)
+        self.browse_button.grid(row=0, column=2, padx=10, pady=10)
 
-        # 2. 排除文件夹选项
+        tk.Label(master, text="排除路径 (逗号分隔):").grid(row=1, column=0, padx=10, pady=5, sticky='w')
         self.exclude_folders_var = tk.StringVar()
-        self.exclude_folders_var.set(".git, node_modules, __pycache__, build, dist")
-        tk.Label(master, text="排除(支持相对路径):").grid(row=1, column=0, padx=5, pady=5, sticky='w')
+        self.exclude_folders_var.set(".git, node_modules, __pycache__, build, dist, include/boost")
         self.exclude_entry = tk.Entry(master, textvariable=self.exclude_folders_var, width=50)
         self.exclude_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
 
-        # 3. 开始转换按钮
-        self.convert_button = tk.Button(master, text="开始转换", command=self.start_conversion_thread)
-        self.convert_button.grid(row=2, column=0, columnspan=3, pady=10)
+        self.convert_button = tk.Button(master, text="🚀 开始转换", command=self.start_conversion_thread, bg="#e1e1e1")
+        self.convert_button.grid(row=2, column=0, columnspan=3, pady=15)
 
-        # 4. 日志输出区域
-        tk.Label(master, text="转换日志:").grid(row=3, column=0, padx=5, pady=5, sticky='w')
-        self.log_text = scrolledtext.ScrolledText(master, wrap=tk.WORD, height=15)
-        self.log_text.grid(row=4, column=0, columnspan=3, padx=5, pady=5, sticky='nsew')
+        tk.Label(master, text="处理日志:").grid(row=3, column=0, padx=10, pady=5, sticky='w')
+        self.log_text = scrolledtext.ScrolledText(master, wrap=tk.WORD, height=18)
+        self.log_text.grid(row=4, column=0, columnspan=3, padx=10, pady=5, sticky='nsew')
         self.log_text.config(state=tk.DISABLED)
 
-        # 5. GitHub 链接
         self.github_url = "https://github.com/dependon/gbk2utf8"
         self.github_label = tk.Label(master, text="项目地址: " + self.github_url, fg="blue", cursor="hand2")
-        self.github_label.grid(row=5, column=0, columnspan=3, padx=5, pady=(5, 10), sticky='w') 
-        self.github_label.bind("<Button-1>", self.open_link)
+        self.github_label.grid(row=5, column=0, columnspan=3, padx=10, pady=10, sticky='w') 
+        self.github_label.bind("<Button-1>", lambda e: webbrowser.open_new(self.github_url))
 
-        # 6. 配置行列权重
-        master.grid_rowconfigure(4, weight=1) 
-        master.grid_rowconfigure(5, weight=0) 
+        master.grid_rowconfigure(4, weight=1)
         master.grid_columnconfigure(1, weight=1)
 
     def log(self, message):
-        """线程安全的日志输出：将 UI 更新放入主线程消息队列"""
+        """线程安全的日志记录"""
         self.master.after(0, self._log_safe, message)
 
     def _log_safe(self, message):
-        """实际执行日志写入的方法（仅在主线程运行）"""
         self.log_text.config(state=tk.NORMAL)
         self.log_text.insert(tk.END, message + "\n")
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)
 
     def browse_folder(self):
-        folder_selected = filedialog.askdirectory()
-        if folder_selected:
-            self.folder_path_var.set(folder_selected)
-            self.log(f"已选择文件夹: {folder_selected}")
-
-    def is_text_file(self, filename):
-        _, ext = os.path.splitext(filename)
-        return ext.lower() in TEXT_FILE_EXTENSIONS
+        folder = filedialog.askdirectory()
+        if folder:
+            self.folder_path_var.set(os.path.normpath(folder))
 
     def detect_encoding(self, file_path):
+        """增强版编码检测：保护西欧特殊字符"""
         try:
             with open(file_path, 'rb') as f:
-                raw_data = f.read(8192)
+                raw_data = f.read(10240) # 读取10KB提高准确度
             
-            # 如果文件完全是纯英文(ASCII)，直接判定为 utf-8，避免后续误判和转换
+            # 1. 尝试直接以 UTF-8 解码（涵盖了纯英文 ASCII）
             try:
                 raw_data.decode('utf-8')
                 return 'utf-8', 1.0
@@ -93,132 +78,90 @@ class EncodingConverterApp:
                 pass
 
             result = chardet.detect(raw_data)
-            encoding = result['encoding']
-            confidence = result['confidence']
+            enc = result['encoding']
+            conf = result['confidence']
 
-            if encoding and encoding.lower() in ['ascii', 'windows-1252', 'iso-8859-1']:
-                return 'gb18030', 0.5
-            
-            return encoding, confidence
+            # 2. 针对可能包含特殊西欧字符（如 Hervé）的情况进行保护
+            if enc and enc.lower() in ['ascii', 'windows-1252', 'iso-8859-1']:
+                try:
+                    # 尝试用中文编码严格检测，如果报错，说明它真的就是西欧文，不是GBK误判
+                    raw_data.decode('gb18030')
+                    return 'gb18030', 0.5
+                except UnicodeDecodeError:
+                    # 确认为外文，返回 utf-8 让其跳过处理，或者保留原样
+                    return 'utf-8', 1.0 
+
+            return enc, conf
         except Exception as e:
-            self.log(f"检测编码错误 ({os.path.basename(file_path)}): {e}")
+            self.log(f"读取错误: {os.path.basename(file_path)} - {e}")
             return None, 0
 
-    def convert_file_encoding(self, file_path, original_encoding):
-        try:
-            with open(file_path, 'r', encoding=original_encoding, errors='replace') as f_read:
-                content = f_read.read()
+    def process_folder(self, base_folder):
+        # 预处理排除列表：统一斜杠并清理空格
+        raw_excludes = self.exclude_folders_var.get().split(',')
+        exclude_list = [os.path.normpath(x.strip().replace('/', os.sep)) for x in raw_excludes if x.strip()]
+
+        converted = 0
+        skipped = 0
+        errors = 0
+
+        for root, dirs, files in os.walk(base_folder, topdown=True):
+            # 获取当前目录相对于根目录的路径
+            rel_root = os.path.relpath(root, base_folder)
             
-            needs_conversion = False
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f_utf8_check:
-                     utf8_content = f_utf8_check.read()
-                if content != utf8_content:
-                    needs_conversion = True
-            except UnicodeDecodeError:
-                 needs_conversion = True
-            except Exception:
-                 needs_conversion = True
+            # 检查当前目录是否在排除名单中（支持 include/boost 这种写法）
+            # 注意：'.' 表示根目录本身
+            if any(rel_root == ex or rel_root.startswith(ex + os.sep) for ex in exclude_list):
+                dirs[:] = [] # 阻止继续向下遍历
+                continue
 
-            if needs_conversion:
-                with open(file_path, 'w', encoding=TARGET_ENCODING) as f_write:
-                    f_write.write(content)
-                self.log(f"成功: {os.path.basename(file_path)} ({original_encoding} -> {TARGET_ENCODING})")
-                return True
-            else:
-                self.log(f"跳过: {os.path.basename(file_path)} (无需转换)")
-                return False
+            # 过滤子目录，防止下一步进入排除名单
+            dirs[:] = [d for d in dirs if os.path.normpath(os.path.join(rel_root, d)) not in exclude_list]
 
-        except Exception as e:
-            self.log(f"转换失败: {os.path.basename(file_path)} - {e}")
-            return False
-
-    def process_folder(self, folder_path):
-        converted_count = 0
-        skipped_count = 0
-        error_count = 0
-        processed_files = 0
-
-        # 解析排除文件夹列表，统一路径格式，兼容跨平台
-        exclude_str = self.exclude_folders_var.get()
-        exclude_items = [os.path.normpath(f.strip()) for f in exclude_str.split(',') if f.strip()]
-
-        self.log(f"\n开始扫描文件夹: {folder_path}")
-        if exclude_items:
-            self.log(f"排除的文件夹/路径: {', '.join(exclude_items)}")
-
-        for root, dirs, files in os.walk(folder_path):
-            # 原地修改 dirs，支持按文件夹名或相对路径阻止 os.walk 深入
-            dirs_to_keep = []
-            for d in dirs:
-                # 计算相对路径，例如 'include/boost'
-                rel_dir = os.path.relpath(os.path.join(root, d), folder_path)
-                
-                is_excluded = False
-                for ex in exclude_items:
-                    # 匹配纯文件夹名，或相对路径，或相对路径的子目录
-                    if d == ex or rel_dir == ex or rel_dir.startswith(ex + os.sep):
-                        is_excluded = True
-                        break
-                
-                if not is_excluded:
-                    dirs_to_keep.append(d)
-            
-            dirs[:] = dirs_to_keep # 覆盖原列表，os.walk 将只遍历过滤后的目录
-
-            for filename in files:
-                if not self.is_text_file(filename):
+            for f in files:
+                if not any(f.lower().endswith(ext) for ext in TEXT_FILE_EXTENSIONS):
                     continue
 
-                file_path = os.path.join(root, filename)
-                processed_files += 1
-                
-                encoding, confidence = self.detect_encoding(file_path)
+                full_path = os.path.join(root, f)
+                enc, conf = self.detect_encoding(full_path)
 
-                if encoding and encoding.lower() == 'utf-8':
-                    # 直接跳过已确认的纯英文或UTF-8文件
-                    skipped_count += 1
-                elif encoding:
-                    self.log(f"正在处理: {file_path}")
-                    self.log(f"尝试转换 {encoding.upper()} -> UTF-8: {filename}")
-                    if self.convert_file_encoding(file_path, encoding):
-                        converted_count += 1
-                    else:
-                        error_count += 1
-                else:
-                    skipped_count += 1
-                    error_count += 1
-        
-        # 扫描结束，恢复UI状态（线程安全调用）
-        self.master.after(0, self._finish_conversion, processed_files, converted_count, skipped_count, error_count)
+                # 逻辑优化：如果是 UTF-8 或无法识别，直接跳过
+                if not enc or enc.lower() == 'utf-8':
+                    skipped += 1
+                    continue
 
-    def _finish_conversion(self, processed_files, converted_count, skipped_count, error_count):
-        """线程安全地结束转换并更新UI"""
-        self.log(f"\n处理完成。共扫描 {processed_files} 个文本/代码文件。")
-        self.log(f"成功转换: {converted_count}")
-        self.log(f"跳过文件: {skipped_count}")
-        self.log(f"转换/检测失败: {error_count}")
-        messagebox.showinfo("完成", f"转换完成！\n成功: {converted_count}\n跳过: {skipped_count}\n失败: {error_count}")
+                try:
+                    self.log(f"转换中 [{enc.upper()}]: {os.path.relpath(full_path, base_folder)}")
+                    with open(full_path, 'r', encoding=enc, errors='replace') as fr:
+                        content = fr.read()
+                    with open(full_path, 'w', encoding='utf-8') as fw:
+                        fw.write(content)
+                    converted += 1
+                except Exception as e:
+                    self.log(f"❌ 失败: {f} - {e}")
+                    errors += 1
+
+        self.master.after(0, lambda: self.finish_ui(converted, skipped, errors))
+
+    def finish_ui(self, c, s, e):
+        self.log(f"\n✨ 处理完成！ 成功: {c} | 跳过: {s} | 失败: {e}")
+        messagebox.showinfo("完成", f"任务已结束\n转换: {c}\n跳过: {s}\n错误: {e}")
         self.convert_button.config(state=tk.NORMAL)
         self.browse_button.config(state=tk.NORMAL)
 
     def start_conversion_thread(self):
-        folder_path = self.folder_path_var.get()
-        if not folder_path or not os.path.isdir(folder_path):
-            messagebox.showerror("错误", "请先选择一个有效的文件夹！")
+        path = self.folder_path_var.get()
+        if not path or not os.path.isdir(path):
+            messagebox.showerror("错误", "请选择正确的文件夹路径")
             return
-
+        
         self.convert_button.config(state=tk.DISABLED)
         self.browse_button.config(state=tk.DISABLED)
         self.log_text.config(state=tk.NORMAL)
         self.log_text.delete('1.0', tk.END)
         self.log_text.config(state=tk.DISABLED)
-
-        conversion_thread = threading.Thread(target=self.process_folder, args=(folder_path,), daemon=True)
-        conversion_thread.start()
-
-    def open_link(self, event):
-        webbrowser.open_new(self.github_url)
+        
+        threading.Thread(target=self.process_folder, args=(path,), daemon=True).start()
 
 if __name__ == "__main__":
     root = tk.Tk()

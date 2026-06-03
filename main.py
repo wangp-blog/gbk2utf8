@@ -4,7 +4,6 @@ import os
 import chardet
 import threading
 import webbrowser
-import re
 
 # 常见的文本和代码文件扩展名
 TEXT_FILE_EXTENSIONS = {
@@ -17,7 +16,7 @@ TEXT_FILE_EXTENSIONS = {
 class EncodingConverterApp:
     def __init__(self, master):
         self.master = master
-        master.title("GBK 转 UTF-8 工具 (最终强化版)")
+        master.title("GBK 转 UTF-8 工具 (安全稳定版)")
         master.geometry("650x550")
 
         # UI 布局
@@ -70,20 +69,32 @@ class EncodingConverterApp:
 
     def detect_encoding(self, file_path):
         try:
+            # 改进: 最多读取 1MB 用于检测，既兼顾性能，又降低了字符被截断的概率
             with open(file_path, 'rb') as f:
-                raw_data = f.read(15360) # 进一步扩大采样到15KB
+                raw_data = f.read(1024 * 1024) 
             
-            # 1. 尝试 UTF-8
-            try:
-                raw_data.decode('utf-8')
+            if not raw_data:
                 return 'utf-8', 1.0
+
+            # 1. 尝试 UTF-8 严格解码
+            try:
+                try:
+                    raw_data.decode('utf-8')
+                    return 'utf-8', 1.0
+                except UnicodeDecodeError as e:
+                    # 如果文件碰巧等于 1MB 且抛出截断错误，我们退回 3 个字节再试
+                    if len(raw_data) == 1024 * 1024: 
+                        raw_data[:-3].decode('utf-8')
+                        return 'utf-8', 1.0
+                    else:
+                        raise e # 文件没被截断却报错，说明真不是纯 UTF-8
             except UnicodeDecodeError:
                 pass
 
             result = chardet.detect(raw_data)
             enc = result['encoding']
             
-            # 2. 针对 Bjønnes 这种西欧字符的保护逻辑
+            # 2. 针对西欧字符的保护逻辑
             if enc and enc.lower() in ['ascii', 'windows-1252', 'iso-8859-1']:
                 try:
                     # 尝试用 GB18030 解码并检查是否有汉字
@@ -111,7 +122,7 @@ class EncodingConverterApp:
         errors = 0
 
         for root, dirs, files in os.walk(base_folder, topdown=True):
-            # 核心改进：检查当前 root 路径中是否包含任何排除关键字
+            # 检查当前 root 路径中是否包含任何排除关键字
             rel_root = os.path.relpath(root, base_folder)
             
             # 只要关键字在路径片段中出现，就跳过整个目录
@@ -132,23 +143,41 @@ class EncodingConverterApp:
                     continue
 
                 try:
-                    # 如果检测到 MACROMAN 或其他罕见编码且没有汉字，跳过
+                    # 如果检测到罕见编码且没有汉字，跳过 (这步可以保留 replace 因为仅用于检查)
                     if enc.lower() not in ['gbk', 'gb2312', 'gb18030', 'utf-8-sig']:
-                        # 再做一次汉字检测，防止把西欧注释转乱码
                         with open(full_path, 'rb') as f_check:
                             if not self.is_likely_chinese(f_check.read(10240).decode(enc, errors='replace')):
                                 skipped += 1
                                 continue
 
-                    self.log(f"转换中 [{enc.upper()}]: {os.path.relpath(full_path, base_folder)}")
-                    with open(full_path, 'r', encoding=enc, errors='replace') as fr:
+                    self.log(f"尝试转换 [{enc.upper()}]: {os.path.relpath(full_path, base_folder)}")
+                    
+                    # 改进: 严格要求解码成功 (不用 replace)
+                    with open(full_path, 'r', encoding=enc, errors='strict') as fr:
                         content = fr.read()
-                    with open(full_path, 'w', encoding='utf-8') as fw:
+                    
+                    # 改进: 安全的文件写入方式 (临时文件机制)
+                    temp_path = full_path + ".tmp_convert"
+                    with open(temp_path, 'w', encoding='utf-8') as fw:
                         fw.write(content)
+                    
+                    # 写入成功后，原子级替换原文件
+                    os.replace(temp_path, full_path)
+                    
                     converted += 1
+                    self.log(f"✅ 转换成功: {os.path.relpath(full_path, base_folder)}")
+                    
+                except UnicodeDecodeError:
+                    # 解码失败，说明 chardet 猜错了，拒绝转换，保护原文件
+                    self.log(f"⚠️ 跳过 (解码失败，可能非 {enc}): {f}")
+                    skipped += 1
+                    if os.path.exists(full_path + ".tmp_convert"):
+                        os.remove(full_path + ".tmp_convert")
                 except Exception as e:
                     self.log(f"❌ 失败: {f} - {e}")
                     errors += 1
+                    if os.path.exists(full_path + ".tmp_convert"):
+                        os.remove(full_path + ".tmp_convert")
 
         self.master.after(0, lambda: self.finish_ui(converted, skipped, errors))
 

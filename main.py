@@ -21,7 +21,7 @@ MISREAD_PATTERNS = ['鍐堝瓨', '涓枃', '閿欒', '鏂囦欢', '浠ｇ爜'
 class EncodingConverterApp:
     def __init__(self, master):
         self.master = master
-        master.title("全能编码处理工具包 (转换 / 查乱码 / 查GBK)")
+        master.title("编码处理工具)")
         master.geometry("1000x780")
 
         # ===== 字体缩放支持 =====
@@ -72,11 +72,6 @@ class EncodingConverterApp:
         self.log_text.grid(row=4, column=0, columnspan=3, padx=10, pady=5, sticky='nsew')
         self.log_text.config(state=tk.DISABLED)
 
-        # UI 布局 - 底部链接
-        self.github_url = "https://github.com/dependon/gbk2utf8"
-        self.github_label = tk.Label(master, text="源项目地址: " + self.github_url, fg="blue", cursor="hand2")
-        self.github_label.grid(row=5, column=0, columnspan=3, padx=10, pady=5, sticky='w') 
-        self.github_label.bind("<Button-1>", lambda e: webbrowser.open_new(self.github_url))
 
         master.grid_rowconfigure(4, weight=1)
         master.grid_columnconfigure(1, weight=1)

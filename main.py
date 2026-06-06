@@ -4,6 +4,7 @@ import os
 import threading
 import webbrowser
 import re
+import tkinter.font as tkFont
 
 # 常见的文本和代码文件扩展名
 TEXT_FILE_EXTENSIONS = {
@@ -21,7 +22,22 @@ class EncodingConverterApp:
     def __init__(self, master):
         self.master = master
         master.title("全能编码处理工具包 (转换 / 查乱码 / 查GBK)")
-        master.geometry("800x650")
+        master.geometry("1000x780")
+
+        # ===== 字体缩放支持 =====
+        self.font_size = 12
+        self.min_font_size = 8
+        self.max_font_size = 24
+
+        self.default_font = tkFont.nametofont("TkDefaultFont")
+        self.text_font = tkFont.nametofont("TkTextFont")
+        self.fixed_font = tkFont.nametofont("TkFixedFont")
+
+        self.update_font_size()
+
+        master.bind_all("<Control-MouseWheel>", self.on_ctrl_mousewheel)
+        master.bind_all("<Control-Button-4>", self.on_ctrl_mousewheel_linux)
+        master.bind_all("<Control-Button-5>", self.on_ctrl_mousewheel_linux)
 
         # UI 布局 - 设置区
         tk.Label(master, text="选择根文件夹:").grid(row=0, column=0, padx=10, pady=10, sticky='w')
@@ -67,6 +83,32 @@ class EncodingConverterApp:
 
         # 匹配中文及其全角标点，用于确保 GBK 转换的绝对精准 (安全转换用)
         self.chinese_pattern = re.compile(r'[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]')
+
+
+    def update_font_size(self):
+        self.default_font.configure(size=self.font_size)
+        self.text_font.configure(size=self.font_size)
+        self.fixed_font.configure(size=self.font_size)
+
+        if hasattr(self, "log_text"):
+            self.log_text.configure(font=("Microsoft YaHei UI", self.font_size))
+
+        if hasattr(self, "font_label"):
+            self.font_label.config(text=f"字体: {self.font_size}px")
+
+    def on_ctrl_mousewheel(self, event):
+        self.font_size += 1 if event.delta > 0 else -1
+        self.font_size = max(self.min_font_size, min(self.max_font_size, self.font_size))
+        self.update_font_size()
+
+    def on_ctrl_mousewheel_linux(self, event):
+        if event.num == 4:
+            self.font_size += 1
+        elif event.num == 5:
+            self.font_size -= 1
+
+        self.font_size = max(self.min_font_size, min(self.max_font_size, self.font_size))
+        self.update_font_size()
 
     # ================= 基础日志与状态管理 =================
     def log(self, message):

@@ -296,6 +296,7 @@ class EncodingConverterApp:
 
     # ================= 功能 3：保守安全转换 =================
     def _detect_convert_target(self, file_path):
+        """与 _is_gbk_file 保持一致的判断逻辑：用 gb18030 检测（兼容混入的 UTF-8 字节），不额外要求包含中文"""
         try:
             with open(file_path, 'rb') as f: raw_bytes = f.read()
             if not raw_bytes or b'\x00' in raw_bytes or raw_bytes.startswith(b'\xef\xbb\xbf'): return False
@@ -304,10 +305,9 @@ class EncodingConverterApp:
                 return False
             except: pass
             
-            gbk_text = raw_bytes.decode('gbk', errors='strict')
-            if self.chinese_pattern.search(gbk_text):
-                return True
-            return False
+            # 用 gb18030（GBK 超集）检测，容忍 Claude Code 混入的 UTF-8 字节
+            raw_bytes.decode('gb18030', errors='strict')
+            return True
         except: return False
 
     def task_convert(self, base_folder):
@@ -319,7 +319,8 @@ class EncodingConverterApp:
                 try:
                     self.log(f"[🟢 锁定 GBK 文件] 转换中: {rel_path}")
                     # 使用 newline='' 保留原始换行符（CRLF/LF 不变）
-                    with open(full_path, 'r', encoding='gbk', errors='strict', newline='') as fr:
+                    # 读取用 gb18030（兼容 Claud Code 混入的 UTF-8 字节），写入用 utf-8
+                    with open(full_path, 'r', encoding='gb18030', errors='strict', newline='') as fr:
                         content = fr.read()
                     
                     temp_path = full_path + ".tmp_convert"

@@ -16,12 +16,12 @@ TEXT_FILE_EXTENSIONS = {
 
 # --- 乱码检测字典 ---
 CORRUPTED_WORDS = ['锟斤拷', '烫烫烫', '屯屯屯']
-MISREAD_PATTERNS = ['鍐堝瓨', '涓枃', '閿欒', '鏂囦欢', '浠ｇ爜', '鐩綍', '鏁版嵁', '缂栬瘧', '鍙傛暟', '杩斿洖', '锘匡']
+MISREAD_PATTERNS = ['鍐堝瓨', '涓枃', '閿欒', '鏂囦欢', '浠ｇ爜', '鐩綍', '鏁版嵁', '缂栬瘧', '鍙傛暟', '杩斿洖', '锘匡']
 
 class EncodingConverterApp:
     def __init__(self, master):
         self.master = master
-        master.title("编码处理工具)")
+        master.title("编码处理工具")
         master.geometry("1000x780")
 
         # ===== 字体缩放支持 =====
@@ -318,10 +318,13 @@ class EncodingConverterApp:
             if self._detect_convert_target(full_path):
                 try:
                     self.log(f"[🟢 锁定 GBK 文件] 转换中: {rel_path}")
-                    with open(full_path, 'r', encoding='gbk', errors='strict') as fr: content = fr.read()
+                    # 使用 newline='' 保留原始换行符（CRLF/LF 不变）
+                    with open(full_path, 'r', encoding='gbk', errors='strict', newline='') as fr:
+                        content = fr.read()
                     
                     temp_path = full_path + ".tmp_convert"
-                    with open(temp_path, 'w', encoding='utf-8') as fw: fw.write(content)
+                    with open(temp_path, 'w', encoding='utf-8', newline='') as fw:
+                        fw.write(content)
                     os.replace(temp_path, full_path)
                     
                     converted += 1
@@ -329,7 +332,8 @@ class EncodingConverterApp:
                 except Exception as e:
                     self.log(f"   └── ❌ 失败: {e}")
                     errors += 1
-                    if os.path.exists(full_path + ".tmp_convert"): os.remove(full_path + ".tmp_convert")
+                    if os.path.exists(full_path + ".tmp_convert"):
+                        os.remove(full_path + ".tmp_convert")
             else:
                 skipped += 1
 
